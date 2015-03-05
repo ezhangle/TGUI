@@ -50,7 +50,6 @@
 ////////////////////////////////////////////////////////////
 
 #include <SFML/Config.hpp>
-#include <string>
 #include <android/native_activity.h>
 #include <android/log.h>
 #include <dlfcn.h>
@@ -64,7 +63,7 @@ namespace {
     typedef void (*activityOnCreatePointer)(ANativeActivity*, void*, size_t);
 }
 
-std::string getLibraryName(JNIEnv* lJNIEnv, jobject& objectActivityInfo)
+const char* getLibraryName(JNIEnv* lJNIEnv, jobject& objectActivityInfo)
 {
     // This function reads the value of meta-data "tgui.app.lib_name"
     // found in the Android Manifest file and returns it. It performs the
@@ -85,7 +84,7 @@ std::string getLibraryName(JNIEnv* lJNIEnv, jobject& objectActivityInfo)
     jmethodID methodGetString = lJNIEnv->GetMethodID(classBundle, "getString", "(Ljava/lang/String;)Ljava/lang/String;");
     jstring valueString = (jstring)lJNIEnv->CallObjectMethod(objectMetaData, methodGetString, objectName);
 
-    // No meta-data "tgui.app.lib_name" was found so we abord and inform the user
+    // No meta-data "tgui.app.lib_name" was found so we abort and inform the user
     if (valueString == NULL)
     {
         LOGE("No meta-data 'tgui.app.lib_name' found in AndroidManifest.xml file");
@@ -95,10 +94,18 @@ std::string getLibraryName(JNIEnv* lJNIEnv, jobject& objectActivityInfo)
     // Convert the application name to a C++ string and return it
     const jsize applicationNameLength = lJNIEnv->GetStringUTFLength(valueString);
     const char* applicationName = lJNIEnv->GetStringUTFChars(valueString, NULL);
-    std::string ret(applicationName, applicationNameLength);
+    if (applicationNameLength >= 256)
+    {
+        LOGE("The value of 'tgui.app.lib_name' must not be longer than 255 characters.");
+        exit(1);
+    }
+
+    static char name[256];
+    strncpy(name, applicationName, applicationNameLength);
+    name[applicationNameLength] = '\0';
     lJNIEnv->ReleaseStringUTFChars(valueString, applicationName);
 
-    return ret;
+    return name;
 }
 
 void* loadLibrary(const char* libraryName, JNIEnv* lJNIEnv, jobject& ObjectActivityInfo)
@@ -185,6 +192,15 @@ void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_
     jmethodID MethodGetActivityInfo = lJNIEnv->GetMethodID(ClassPackageManager, "getActivityInfo", "(Landroid/content/ComponentName;I)Landroid/content/pm/ActivityInfo;");
     jobject ObjectActivityInfo = lJNIEnv->CallObjectMethod(ObjectPackageManager, MethodGetActivityInfo, ObjectComponentName, GET_META_DATA);
 
+    // Load the wanted STL library
+#if defined(STL_LIBRARY)
+#define _SFML_QS(s) _SFML_S(s)
+#define _SFML_S(s) #s
+    loadLibrary(_SFML_QS(STL_LIBRARY), lJNIEnv, ObjectActivityInfo);
+#undef _SFML_S
+#undef _SFML_QS
+#endif
+
     // Load our libraries in reverse order
     loadLibrary("c++_shared", lJNIEnv, ObjectActivityInfo);
     loadLibrary("sndfile", lJNIEnv, ObjectActivityInfo);
@@ -196,10 +212,8 @@ void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_
     loadLibrary("tgui-d", lJNIEnv, ObjectActivityInfo);
 #endif
 
-    std::string libName = getLibraryName(lJNIEnv, ObjectActivityInfo);
-    void* handle = loadLibrary(libName.c_str(), lJNIEnv, ObjectActivityInfo);
-
     // Call the original ANativeActivity_onCreate function
+    void* handle = loadLibrary(getLibraryName(lJNIEnv, ObjectActivityInfo), lJNIEnv, ObjectActivityInfo);
     activityOnCreatePointer ANativeActivity_onCreate = (activityOnCreatePointer)dlsym(handle, "ANativeActivity_onCreate");
 
     if (!ANativeActivity_onCreate)

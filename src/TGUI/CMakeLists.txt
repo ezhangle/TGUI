@@ -17,13 +17,13 @@ else()
         add_definitions(-DSFML_OPENGL_ES)
         include_directories(${EGL_INCLUDE_DIR} ${GLES_INCLUDE_DIR})
     elseif(SFML_OS_ANDROID)
-        set(TGUI_EXT_LIBS ${SFML_LIBRARIES} "-lEGL -lGLESv1_CM")
+        set(TGUI_EXT_LIBS ${SFML_LIBRARIES} "EGL GLESv1_CM")
     endif()
 endif()
 
 # We need to link to an extra library on android (to use the asset manager)
 if(SFML_OS_ANDROID)
-    set(TGUI_EXT_LIBS ${TGUI_EXT_LIBS} "-landroid")
+    set(TGUI_EXT_LIBS ${TGUI_EXT_LIBS} "android")
 endif()
 
 # Determine library suffixes depending on static/shared configuration
